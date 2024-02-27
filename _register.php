@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use OpenTelemetry\Contrib\Instrumentation\Wordpress\WordpressInstrumentation;
+use OpenTelemetry\Contrib\Instrumentation\Wordpress\HttpClientInstrumentation;
 use OpenTelemetry\SDK\Sdk;
 
 if (class_exists(Sdk::class) && Sdk::isInstrumentationDisabled(WordpressInstrumentation::NAME) === true) {
@@ -16,3 +17,4 @@ if (extension_loaded('opentelemetry') === false) {
 }
 
 WordpressInstrumentation::register();
+HttpClientInstrumentation::register();

@@ -24,6 +24,7 @@ class WordpressInstrumentation
     public static function register(): void
     {
         $instrumentation = new CachedInstrumentation('io.opentelemetry.contrib.php.wordpress');
+        $httpInstrument = new CachedInstrumentation('io.opentelemetry.contrib.php.wordpress_http');
 
         self::_hook($instrumentation, 'WP', 'main', 'WP.main');
         self::_hook($instrumentation, 'WP', 'init', 'WP.init');
@@ -33,7 +34,6 @@ class WordpressInstrumentation
         self::_hook($instrumentation, 'WP', 'handle_404', 'WP.handle_404');
         self::_hook($instrumentation, 'WP', 'register_globals', 'WP.register_globals');
         self::_hook($instrumentation, null, 'get_single_template', 'get_single_template');
-        self::_hook($instrumentation, 'WP_Http', 'http_request_args', 'WP_Http.http_request_args');
         self::_hook($instrumentation, 'wpdb', 'db_connect', 'wpdb.db_connect', SpanKind::KIND_CLIENT);
         self::_hook($instrumentation, 'wpdb', 'close', 'wpdb.close', SpanKind::KIND_CLIENT);
 
@@ -120,6 +120,105 @@ class WordpressInstrumentation
                 });
             }
         );
+
+
+
+        /**
+         * Taken from Auto Guzzle instrumentation
+         */
+
+         hook(
+            class: \WpOrg\Requests\Transport::class,
+            function: 'request',
+            pre: static function (\WpOrg\Requests\Transport\Curl $request, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($httpInstrument): \WpOrg\Requests\Transport\Curl {
+                
+                $urlParts = parse_url($params[0]);
+
+                $method = $params[3]['type'];
+                $uri = $params[0];
+                $protocolVersion = $params[3]['protocol_version'];
+                $userAgent = $params[3]['useragent'];
+                $host = $urlParts['host'];
+                $port = $urlParts['port'];
+                $path = $urlParts['path'];
+
+                $spanBuilder = self::builder($httpInstrument, $method, $function, $class, $filename, $lineno)
+                    ->setSpanKind(SpanKind::KIND_CLIENT)
+                    ->setAttribute(TraceAttributes::URL_FULL, $uri)
+                    ->setAttribute(TraceAttributes::HTTP_REQUEST_METHOD, $method)
+                    ->setAttribute(TraceAttributes::NETWORK_PROTOCOL_VERSION, $protocolVersion)
+                    ->setAttribute(TraceAttributes::USER_AGENT_ORIGINAL, $userAgent)
+                    ->setAttribute(TraceAttributes::SERVER_ADDRESS, $host)
+                    ->setAttribute(TraceAttributes::SERVER_PORT, $port)
+                    ->setAttribute(TraceAttributes::URL_PATH, $path);
+
+                foreach ((array) $params[1] as $header => $value) {
+                    $spanBuilder->setAttribute(
+                        sprintf('http.request.header.%s', strtolower($header)), 
+                        $value
+                    );
+                }
+                $span = $spanBuilder->startSpan();
+                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
+                return $request;
+            },
+            post: static function ($client, array $params, $promise, ?Throwable $exception): void {
+                
+                self::end($exception);
+               // echo "<pre>------------------------------------\n"; var_dump($client, $params, $promise, $exception);die;
+                // $scope = Context::storage()->scope();
+                // $scope?->detach();
+
+                // if (!$scope || $scope->context() === Context::getCurrent()) {
+                //     return;
+                // }
+
+                // $span = Span::fromContext($scope->context());
+                // if ($exception) {
+                //     $span->recordException($exception, [TraceAttributes::EXCEPTION_ESCAPED => true]);
+                //     $span->setStatus(StatusCode::STATUS_ERROR, $exception->getMessage());
+                //     $span->end();
+                // }
+
+                // $promise->then(
+                //     onFulfilled: function (ResponseInterface $response) use ($span) {
+                //         $span->setAttribute(TraceAttributes::HTTP_RESPONSE_STATUS_CODE, $response->getStatusCode());
+                //         $span->setAttribute(TraceAttributes::NETWORK_PROTOCOL_VERSION, $response->getProtocolVersion());
+                //         $span->setAttribute(TraceAttributes::HTTP_RESPONSE_BODY_SIZE, $response->getHeaderLine('Content-Length'));
+                //         if ($response->getStatusCode() >= 400 && $response->getStatusCode() < 600) {
+                //             $span->setStatus(StatusCode::STATUS_ERROR);
+                //         }
+                //         $span->end();
+
+                //         return $response;
+                //     },
+                //     onRejected: function (\Throwable $t) use ($span) {
+                //         $span->recordException($t, [TraceAttributes::EXCEPTION_ESCAPED => true]);
+                //         $span->setStatus(StatusCode::STATUS_ERROR, $t->getMessage());
+                //         $span->end();
+
+                //         throw $t;
+                //     }
+                // );
+            }
+        );
+
+        // hook(
+        //     class: \WpOrg\Requests\Transport::class,
+        //     function: 'process_response',
+        //     pre: static function (\WpOrg\Requests\Transport\Curl $request, array $response, string $class, string $function, ?string $filename, ?int $lineno) use ($httpInstrument): void {
+                
+        //         echo "<pre>------------------------------------\n"; var_dump($request, $response,  $class,  $function, $filename, $lineno);die;
+        //         die();
+        //     },
+        //     post: static function ($client, array $params, $promise, ?Throwable $exception): void {
+                
+        //         echo "<pre>------------------------------------\n"; var_dump($client, $params, $promise, $exception);die;
+        //         self::end($exception);
+        //     }
+        // );
+
+
     }
 
     /**
