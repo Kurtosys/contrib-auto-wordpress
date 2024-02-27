@@ -21,7 +21,7 @@ final class HttpClientInstrumentation
     public static function register(): void
     {
         $instrumentation = new CachedInstrumentation('io.opentelemetry.contrib.php.wordpress_http');
-        
+
         hook(
             'WpOrg\Requests\Requests',
             function: 'request',
@@ -56,29 +56,29 @@ final class HttpClientInstrumentation
                     ->setAttribute(TraceAttributes::CODE_NAMESPACE, $class)
                     ->setAttribute(TraceAttributes::CODE_FILEPATH, $filename)
                     ->setAttribute(TraceAttributes::CODE_LINENO, $lineno);
-                
+
                 $propagator = Globals::propagator();
                 $parent = Context::getCurrent();
 
                 $span = $builder
                     ->setParent($parent)
                     ->startSpan();
-                    
+
 
                 $context = $span->storeInContext($parent);
                 $headers = $params[1] ?? [];
                 $propagator->inject($headers, ArrayAccessGetterSetter::getInstance(), $context);
                 Context::storage()->attach($context);
-                
+
                 return $client;
             },
-            post: static function ( 
-                    $class, 
-                    $request,
-                   ? \WpOrg\Requests\Response $response,
-                   ? \WpOrg\Requests\Exception $exception
+            post: static function (
+                $class,
+                $request,
+                ?\WpOrg\Requests\Response $response,
+                ?\WpOrg\Requests\Exception $exception
             ): void {
-               
+
                 $scope = Context::storage()->scope();
                 if (!$scope) {
                     return;
@@ -94,11 +94,13 @@ final class HttpClientInstrumentation
                 if ($response) {
                     if ($response->status_code >= 400) {
                         $span->setStatus(StatusCode::STATUS_ERROR);
+                    } else {
+                        $span->setStatus(StatusCode::STATUS_OK);
                     }
                     $span->setAttribute(TraceAttributes::HTTP_RESPONSE_STATUS_CODE, $response->status_code);
                     $span->setAttribute(TraceAttributes::NETWORK_PROTOCOL_VERSION, $response->protocol_version);
                     $span->setAttribute(TraceAttributes::HTTP_RESPONSE_BODY_SIZE, mb_strlen($response->body));
-                    
+
                     $propagator = Globals::propagator();
                     $propagator->inject($response->headers, ArrayAccessGetterSetter::getInstance(), $scope->context());
 
