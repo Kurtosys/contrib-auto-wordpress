@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace OpenTelemetry\Contrib\Instrumentation\Symfony;
+namespace OpenTelemetry\Contrib\Instrumentation\Wordpress;
 
 use OpenTelemetry\API\Globals;
 use OpenTelemetry\API\Instrumentation\CachedInstrumentation;
@@ -23,25 +23,53 @@ final class HttpClientInstrumentation
         $instrumentation = new CachedInstrumentation('io.opentelemetry.contrib.php.wordpress_http');
 
         hook(
-            HttpClientInterface::class,
-            'request',
+            class: \WpOrg\Requests\Transport::class,
+            function: 'request',
             pre: static function (
-                HttpClientInterface $client,
+                \WpOrg\Requests\Transport\Curl $client,
                 array $params,
                 string $class,
                 string $function,
                 ?string $filename,
                 ?int $lineno,
             ) use ($instrumentation): array {
-                
+                $urlParts = parse_url($params[0]);
+
+                $method = $params[3]['type'];
+                $uri = $params[0];
+                $protocolVersion = $params[3]['protocol_version'];
+                $userAgent = $params[3]['useragent'];
+                $host = $urlParts['host'];
+                $port = $urlParts['port'];
+                $path = $urlParts['path'];
+
+                $spanBuilder = self::builder($httpInstrument, $method, $function, $class, $filename, $lineno)
+                    ->setSpanKind(SpanKind::KIND_CLIENT)
+                    ->setAttribute(TraceAttributes::URL_FULL, $uri)
+                    ->setAttribute(TraceAttributes::HTTP_REQUEST_METHOD, $method)
+                    ->setAttribute(TraceAttributes::NETWORK_PROTOCOL_VERSION, $protocolVersion)
+                    ->setAttribute(TraceAttributes::USER_AGENT_ORIGINAL, $userAgent)
+                    ->setAttribute(TraceAttributes::SERVER_ADDRESS, $host)
+                    ->setAttribute(TraceAttributes::SERVER_PORT, $port)
+                    ->setAttribute(TraceAttributes::URL_PATH, $path);
+
+                foreach ((array) $params[1] as $header => $value) {
+                    $spanBuilder->setAttribute(
+                        sprintf('http.request.header.%s', strtolower($header)), 
+                        $value
+                    );
+                }
+                $span = $spanBuilder->startSpan();
+                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
+                return $request;
             },
             post: static function (
-                HttpClientInterface $client,
+                \WpOrg\Requests\Transport\Curl $client,
                 array $params,
-                ?ResponseInterface $response,
+                ?$response,
                 ?\Throwable $exception
             ): void {
-                
+                self::end($exception);
             },
         );
     }
