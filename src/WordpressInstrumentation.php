@@ -33,7 +33,7 @@ class WordpressInstrumentation
         self::_hook($instrumentation, 'WP', 'handle_404', 'WP.handle_404');
         self::_hook($instrumentation, 'WP', 'register_globals', 'WP.register_globals');
         self::_hook($instrumentation, null, 'get_single_template', 'get_single_template');
-        self::_hook($instrumentation, null, 'WP_Http', 'WP_Http.http_request_args');
+        self::_hook($instrumentation, 'WP_Http', 'http_request_args', 'WP_Http.http_request_args');
         self::_hook($instrumentation, 'wpdb', 'db_connect', 'wpdb.db_connect', SpanKind::KIND_CLIENT);
         self::_hook($instrumentation, 'wpdb', 'close', 'wpdb.close', SpanKind::KIND_CLIENT);
 
