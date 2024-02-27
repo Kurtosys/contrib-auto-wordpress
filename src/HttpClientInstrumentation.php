@@ -21,55 +21,93 @@ final class HttpClientInstrumentation
     public static function register(): void
     {
         $instrumentation = new CachedInstrumentation('io.opentelemetry.contrib.php.wordpress_http');
-
+        
         hook(
-            class: \WpOrg\Requests\Transport::class,
+            'WpOrg\Requests\Requests',
             function: 'request',
             pre: static function (
-                \WpOrg\Requests\Transport\Curl $client,
+                $client,
                 array $params,
-                string $class,
-                string $function,
+                ?string $class,
+                ?string $function,
                 ?string $filename,
                 ?int $lineno,
             ) use ($instrumentation): array {
                 $urlParts = parse_url($params[0]);
 
-                $method = $params[3]['type'];
+                $method = $params[3];
                 $uri = $params[0];
-                $protocolVersion = $params[3]['protocol_version'];
-                $userAgent = $params[3]['useragent'];
+                $userAgent = $params[4]['useragent'];
                 $host = $urlParts['host'];
                 $port = $urlParts['port'];
                 $path = $urlParts['path'];
 
-                $spanBuilder = self::builder($httpInstrument, $method, $function, $class, $filename, $lineno)
+                $builder = $builder = $instrumentation
+                    ->tracer()
+                    ->spanBuilder(\sprintf('%s', $method))
                     ->setSpanKind(SpanKind::KIND_CLIENT)
                     ->setAttribute(TraceAttributes::URL_FULL, $uri)
                     ->setAttribute(TraceAttributes::HTTP_REQUEST_METHOD, $method)
-                    ->setAttribute(TraceAttributes::NETWORK_PROTOCOL_VERSION, $protocolVersion)
                     ->setAttribute(TraceAttributes::USER_AGENT_ORIGINAL, $userAgent)
                     ->setAttribute(TraceAttributes::SERVER_ADDRESS, $host)
                     ->setAttribute(TraceAttributes::SERVER_PORT, $port)
-                    ->setAttribute(TraceAttributes::URL_PATH, $path);
+                    ->setAttribute(TraceAttributes::URL_PATH, $path)
+                    ->setAttribute(TraceAttributes::CODE_FUNCTION, $function)
+                    ->setAttribute(TraceAttributes::CODE_NAMESPACE, $class)
+                    ->setAttribute(TraceAttributes::CODE_FILEPATH, $filename)
+                    ->setAttribute(TraceAttributes::CODE_LINENO, $lineno);
+                
+                $propagator = Globals::propagator();
+                $parent = Context::getCurrent();
 
-                foreach ((array) $params[1] as $header => $value) {
-                    $spanBuilder->setAttribute(
-                        sprintf('http.request.header.%s', strtolower($header)), 
-                        $value
-                    );
-                }
-                $span = $spanBuilder->startSpan();
-                Context::storage()->attach($span->storeInContext(Context::getCurrent()));
-                return $request;
+                $span = $builder
+                    ->setParent($parent)
+                    ->startSpan();
+                    
+
+                $context = $span->storeInContext($parent);
+                $headers = $params[1] ?? [];
+                $propagator->inject($headers, ArrayAccessGetterSetter::getInstance(), $context);
+                Context::storage()->attach($context);
+                
+                return $client;
             },
-            post: static function (
-                \WpOrg\Requests\Transport\Curl $client,
-                array $params,
-                ?$response,
-                ?\Throwable $exception
+            post: static function ( 
+                    $class, 
+                    $request,
+                   ? \WpOrg\Requests\Response $response,
+                   ? \WpOrg\Requests\Exception $exception
             ): void {
-                self::end($exception);
+               
+                $scope = Context::storage()->scope();
+                if (!$scope) {
+                    return;
+                }
+                $scope->detach();
+                $span = Span::fromContext($scope->context());
+
+                if ($exception) {
+                    $span->recordException(new \Exception($exception->getMessage(), $exception->getCode(), $exception->getPrevious()), [TraceAttributes::EXCEPTION_ESCAPED => true]);
+                    $span->setStatus(StatusCode::STATUS_ERROR, $exception->getMessage());
+                }
+
+                if ($response) {
+                    if ($response->status_code >= 400) {
+                        $span->setStatus(StatusCode::STATUS_ERROR);
+                    }
+                    $span->setAttribute(TraceAttributes::HTTP_RESPONSE_STATUS_CODE, $response->status_code);
+                    $span->setAttribute(TraceAttributes::NETWORK_PROTOCOL_VERSION, $response->protocol_version);
+                    $span->setAttribute(TraceAttributes::HTTP_RESPONSE_BODY_SIZE, mb_strlen($response->body));
+                    
+                    $propagator = Globals::propagator();
+                    $propagator->inject($response->headers, ArrayAccessGetterSetter::getInstance(), $scope->context());
+
+                    foreach ($response->headers->getIterator() as $key => $value) {
+                        $span->setAttribute(\sprintf('http.response.header.%s', strtolower($key)), $value);
+                    }
+                }
+
+                $span->end();
             },
         );
     }
