@@ -107,8 +107,8 @@ final class HttpClientInstrumentation
                     foreach ($response->headers->getIterator() as $key => $value) {
                         $span->setAttribute(\sprintf('http.response.header.%s', strtolower($key)), $value);
                     }
+                   
                 }
-
                 $span->end();
             },
         );
