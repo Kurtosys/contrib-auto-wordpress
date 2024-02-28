@@ -64,7 +64,6 @@ final class HttpClientInstrumentation
                     ->setParent($parent)
                     ->startSpan();
 
-
                 $context = $span->storeInContext($parent);
                 $headers = $params[1] ?? [];
                 $propagator->inject($headers, ArrayAccessGetterSetter::getInstance(), $context);
@@ -107,7 +106,6 @@ final class HttpClientInstrumentation
                     foreach ($response->headers->getIterator() as $key => $value) {
                         $span->setAttribute(\sprintf('http.response.header.%s', strtolower($key)), $value);
                     }
-                   
                 }
                 $span->end();
             },
