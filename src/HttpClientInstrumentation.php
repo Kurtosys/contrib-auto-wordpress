@@ -13,8 +13,6 @@ use OpenTelemetry\Context\Context;
 use OpenTelemetry\Context\Propagation\ArrayAccessGetterSetter;
 use function OpenTelemetry\Instrumentation\hook;
 use OpenTelemetry\SemConv\TraceAttributes;
-use Symfony\Contracts\HttpClient\HttpClientInterface;
-use Symfony\Contracts\HttpClient\ResponseInterface;
 
 final class HttpClientInstrumentation
 {
@@ -25,14 +23,7 @@ final class HttpClientInstrumentation
         hook(
             'WpOrg\Requests\Requests',
             function: 'request',
-            pre: static function (
-                $client,
-                array $params,
-                ?string $class,
-                ?string $function,
-                ?string $filename,
-                ?int $lineno,
-            ) use ($instrumentation): array {
+            pre: static function ($client, array $params, ?string $class, ?string $function, ?string $filename, ?int $lineno) use ($instrumentation): array {
                 $urlParts = parse_url($params[0]);
 
                 $method = $params[3];
@@ -71,12 +62,7 @@ final class HttpClientInstrumentation
 
                 return $client;
             },
-            post: static function (
-                $class,
-                $request,
-                ?\WpOrg\Requests\Response $response,
-                ?\WpOrg\Requests\Exception $exception
-            ): void {
+            post: static function ($class, $request, ?\WpOrg\Requests\Response $response, ?\WpOrg\Requests\Exception $exception): void {
 
                 $scope = Context::storage()->scope();
                 if (!$scope) {
