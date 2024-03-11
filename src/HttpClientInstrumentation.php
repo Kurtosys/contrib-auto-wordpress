@@ -35,7 +35,7 @@ final class HttpClientInstrumentation
 
                 $builder = $builder = $instrumentation
                     ->tracer()
-                    ->spanBuilder(\sprintf('%s', $method))
+                    ->spanBuilder('host-' . $host)
                     ->setSpanKind(SpanKind::KIND_CLIENT)
                     ->setAttribute(TraceAttributes::URL_FULL, $uri)
                     ->setAttribute(TraceAttributes::HTTP_REQUEST_METHOD, $method)
