@@ -23,14 +23,14 @@ final class HttpClientInstrumentation
         hook(
             'WpOrg\Requests\Requests',
             function: 'request',
-            pre: static function ($client, array $params, ?string $class, ?string $function, ?string $filename, ?int $lineno) use ($instrumentation): array {
+            pre: static function ($client, array $params, ?string $class, ?string $function, ?string $filename, ?int $lineno) use ($instrumentation): void {
                 $urlParts = parse_url($params[0]);
 
                 $method = $params[3];
                 $uri = $params[0];
                 $userAgent = $params[4]['useragent'];
                 $host = $urlParts['host'];
-                $port = $urlParts['port'];
+                $port = $urlParts['port'] ?? 80;
                 $path = $urlParts['path'];
 
                 $builder = $builder = $instrumentation
@@ -59,8 +59,6 @@ final class HttpClientInstrumentation
                 $headers = $params[1] ?? [];
                 $propagator->inject($headers, ArrayAccessGetterSetter::getInstance(), $context);
                 Context::storage()->attach($context);
-
-                return $client;
             },
             post: static function ($class, $request, ?\WpOrg\Requests\Response $response, ?\WpOrg\Requests\Exception $exception): void {
 
